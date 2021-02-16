@@ -3,6 +3,7 @@ using Chat.Web.Data;
 using Chat.Web.Models;
 using Chat.Web.ViewModels;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using System;
@@ -13,20 +14,20 @@ using System.Threading.Tasks;
 
 namespace Chat.Web.Hubs
 {
-    [Authorize]
     public class ChatHub : Hub
     {
         public readonly static List<UserViewModel> _Connections = new List<UserViewModel>();
         public readonly static List<RoomViewModel> _Rooms = new List<RoomViewModel>();
         private readonly static Dictionary<string, string> _ConnectionsMap = new Dictionary<string, string>();
-
+        private readonly SignInManager<ApplicationUser> _signInManager;
         private readonly ApplicationDbContext _context;
         private readonly IMapper _mapper;
 
-        public ChatHub(ApplicationDbContext context, IMapper mapper)
+        public ChatHub(ApplicationDbContext context, IMapper mapper, SignInManager<ApplicationUser> signInManager)
         {
             _context = context;
             _mapper = mapper;
+            _signInManager = signInManager;
         }
 
         public async Task SendPrivate(string receiverName, string message)
@@ -134,7 +135,7 @@ namespace Chat.Web.Hubs
                 }
                 else if (_context.Rooms.Any(r => r.Name == roomName))
                 {
-                    await Clients.Caller.SendAsync("onError", "Another chat room with this name exists");
+                    await Join(roomName);
                 }
                 else
                 {
@@ -151,9 +152,10 @@ namespace Chat.Web.Hubs
                     if (room != null)
                     {
                         // Update room list
-                        var roomViewModel = _mapper.Map<Room, RoomViewModel>(room);
+                        RoomViewModel roomViewModel = _mapper.Map<Room, RoomViewModel>(room);
                         _Rooms.Add(roomViewModel);
                         await Clients.All.SendAsync("addChatRoom", roomViewModel);
+                        await Join(roomName);
                     }
                 }
             }
@@ -186,6 +188,40 @@ namespace Chat.Web.Hubs
             catch (Exception)
             {
                 await Clients.Caller.SendAsync("onError", "Can't delete this chat room. Only owner can delete this room.");
+            }
+        }
+
+        public async Task Login(string userName,string password)
+        {
+            try
+            {
+                SignInResult result = null;
+                try
+                {
+                    result = await _signInManager.PasswordSignInAsync(userName, password, false, lockoutOnFailure: false);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine(ex.StackTrace);
+                }
+                if (result.Succeeded)
+                {
+                    var user = _context.Users.Where(u => u.UserName == IdentityName).FirstOrDefault();
+                    var userViewModel = _mapper.Map<ApplicationUser, UserViewModel>(user);
+                    userViewModel.CurrentRoom = "";
+                    var exist = _Connections.Any(u => u.Username == IdentityName);
+                    if (!_Connections.Any(u => u.Username == IdentityName))
+                    {
+                        _Connections.Add(userViewModel);
+                        _ConnectionsMap.Add(IdentityName, Context.ConnectionId);
+                    }
+
+                    await Clients.Caller.SendAsync("getProfileInfo", user.FullName, user.Avatar);
+                }
+            }
+            catch (Exception ex)
+            {
+                await Clients.Caller.SendAsync("onError", "OnConnected:" + ex.Message);
             }
         }
 
@@ -225,25 +261,7 @@ namespace Chat.Web.Hubs
 
         public override Task OnConnectedAsync()
         {
-            try
-            {
-                var user = _context.Users.Where(u => u.UserName == IdentityName).FirstOrDefault();
-                var userViewModel = _mapper.Map<ApplicationUser, UserViewModel>(user);
-                userViewModel.Device = GetDevice();
-                userViewModel.CurrentRoom = "";
-
-                if (!_Connections.Any(u => u.Username == IdentityName))
-                {
-                    _Connections.Add(userViewModel);
-                    _ConnectionsMap.Add(IdentityName, Context.ConnectionId);
-                }
-
-                Clients.Caller.SendAsync("getProfileInfo", user.FullName, user.Avatar);
-            }
-            catch (Exception ex)
-            {
-                Clients.Caller.SendAsync("onError", "OnConnected:" + ex.Message);
-            }
+            Clients.Caller.SendAsync("onConnectionSuccess");
             return base.OnConnectedAsync();
         }
 
@@ -270,16 +288,21 @@ namespace Chat.Web.Hubs
 
         private string IdentityName
         {
-            get { return Context.User.Identity.Name; }
-        }
 
-        private string GetDevice()
-        {
-            var device = Context.GetHttpContext().Request.Headers["Device"].ToString();
-            if (!string.IsNullOrEmpty(device) && (device.Equals("Desktop") || device.Equals("Mobile")))
-                return device;
-
-            return "Web";
+            get {
+                var res = Context.User.Identity.Name;
+                return Context.User.Identity.Name; 
+            }
         }
     }
+
+
+    //private string GetDevice()
+    //{
+    //    var device = Context.GetHttpContext().Request.Headers["Device"].ToString();
+    //    if (!string.IsNullOrEmpty(device) && (device.Equals("Desktop") || device.Equals("Mobile")))
+    //        return device;
+
+    //    return "Web";
+    //}
 }
