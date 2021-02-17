@@ -65,7 +65,7 @@ namespace Chat.Web.Controllers
                     await uploadViewModel.File.CopyToAsync(fileStream);
                 }
 
-                var user = _context.Users.Where(u => u.UserName == User.Identity.Name).FirstOrDefault();
+                var user = _context.Users.Where(u => u.Username == User.Identity.Name).FirstOrDefault();
                 var room = _context.Rooms.Where(r => r.Id == uploadViewModel.RoomId).FirstOrDefault();
                 if (user == null || room == null)
                     return NotFound();

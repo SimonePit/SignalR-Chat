@@ -1,5 +1,6 @@
 ﻿using AutoMapper;
 using Chat.Web.Data;
+using Chat.Web.Entities;
 using Chat.Web.Models;
 using Chat.Web.ViewModels;
 using Microsoft.AspNetCore.Authorization;
@@ -14,6 +15,7 @@ using System.Threading.Tasks;
 
 namespace Chat.Web.Hubs
 {
+    [Authorize]
     public class ChatHub : Hub
     {
         public readonly static List<UserViewModel> _Connections = new List<UserViewModel>();
@@ -60,7 +62,7 @@ namespace Chat.Web.Hubs
         {
             try
             {
-                var user = _context.Users.Where(u => u.UserName == IdentityName).FirstOrDefault();
+                var user = _context.Users.Where(u => u.Username == IdentityName).FirstOrDefault();
                 var room = _context.Rooms.Where(r => r.Name == roomName).FirstOrDefault();
 
                 if (!string.IsNullOrEmpty(message.Trim()))
@@ -140,7 +142,7 @@ namespace Chat.Web.Hubs
                 else
                 {
                     // Create and save chat room in database
-                    var user = _context.Users.Where(u => u.UserName == IdentityName).FirstOrDefault();
+                    var user = _context.Users.Where(u => u.Username == IdentityName).FirstOrDefault();
                     var room = new Room()
                     {
                         Name = roomName,
@@ -171,7 +173,7 @@ namespace Chat.Web.Hubs
             {
                 // Delete from database
                 var room = _context.Rooms.Include(r => r.Admin)
-                    .Where(r => r.Name == roomName && r.Admin.UserName == IdentityName).FirstOrDefault();
+                    .Where(r => r.Name == roomName && r.Admin.Username == IdentityName).FirstOrDefault();
                 _context.Rooms.Remove(room);
                 _context.SaveChanges();
 
@@ -206,8 +208,8 @@ namespace Chat.Web.Hubs
                 }
                 if (result.Succeeded)
                 {
-                    var user = _context.Users.Where(u => u.UserName == IdentityName).FirstOrDefault();
-                    var userViewModel = _mapper.Map<ApplicationUser, UserViewModel>(user);
+                    var user = _context.Users.Where(u => u.Username == IdentityName).FirstOrDefault();
+                    UserViewModel userViewModel = _mapper.Map<User, UserViewModel>(user);
                     userViewModel.CurrentRoom = "";
                     var exist = _Connections.Any(u => u.Username == IdentityName);
                     if (!_Connections.Any(u => u.Username == IdentityName))
@@ -216,7 +218,7 @@ namespace Chat.Web.Hubs
                         _ConnectionsMap.Add(IdentityName, Context.ConnectionId);
                     }
 
-                    await Clients.Caller.SendAsync("getProfileInfo", user.FullName, user.Avatar);
+                    await Clients.Caller.SendAsync("getProfileInfo", user.LastName, user.FirstName);
                 }
             }
             catch (Exception ex)
@@ -290,8 +292,7 @@ namespace Chat.Web.Hubs
         {
 
             get {
-                var res = Context.User.Identity.Name;
-                return Context.User.Identity.Name; 
+                return _context.Users.Where(x => x.Username.Equals("jason")).First().Username; //Context.User.Identity.Name; 
             }
         }
     }
